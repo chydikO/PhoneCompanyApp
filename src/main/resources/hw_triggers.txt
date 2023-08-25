@@ -1,0 +1,94 @@
+Есть следующие таблицы в базе данных телефонной компании:
+
+CREATE DATABASE IF NOT EXIST PhoneCompany DEFAULT CHAR SET utf8;
+USE PhoneCompany;
+
+CUSTOMER (Id, FirstName, LastName, PhoneNum, PlanId)
+PRICINGPLAN (Id, ConnectionFee, PricePerSecond )
+PHONECALL (Id, StartCall, CalledNum, Seconds, CustomerId)
+BILL (Id, Month, Year, Amount, CustomerId)
+
+CREATE TABLE CUSTOMER (
+    Id INT PRIMARY KEY,
+    FirstName VARCHAR(50),
+    LastName VARCHAR(50),
+    PhoneNum VARCHAR(20),
+    PricingPlan_id INT,
+    FOREIGN KEY (PricingPlan_id) REFERENCES PRICINGPLAN(Id)
+);
+
+CREATE TABLE PRICINGPLAN (
+    Id INT PRIMARY KEY,
+    ConnectionFee DECIMAL(10, 2),
+    PricePerSecond DECIMAL(10, 2)
+);
+
+CREATE TABLE PHONECALL (
+    Id INT PRIMARY KEY,
+    StartCall DATETIME,
+    CalledNum VARCHAR(20),
+    Seconds INT,
+    CustomerId INT,
+    FOREIGN KEY (CustomerId) REFERENCES CUSTOMER(Id)
+);
+
+CREATE TABLE BILL (
+    Id INT PRIMARY KEY,
+    Month INT,
+    Year INT,
+    Amount DECIMAL(10, 2),
+    CustomerId INT,
+    FOREIGN KEY (CustomerId) REFERENCES CUSTOMER(Id)
+);
+
+Задание 1:
+Запретить удаление и обновление данных в таблице PHONECALL - только вставка
+CREATE TRIGGER trg_PhoneCall
+BEFORE DELETE OR UPDATE ON PHONECALL
+FOR EACH ROW
+BEGIN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Удаление и обновление данных в таблице PHONECALL запрещено!';
+END;
+
+Задание 2:
+Напишите триггер, который автоматически обновляет счет (amount) за звонки в таблице Bill
+в случае добавления записи в таблицу PHONECALL
+В таблице Bill будет только одна запись для каждого клиента на каждый месяц
+
+CREATE TRIGGER trg_UpdateBillAmount
+AFTER INSERT ON PHONECALL
+FOR EACH ROW
+BEGIN
+    DECLARE billId INT;
+    DECLARE billAmount DECIMAL(10, 2);
+
+    -- Получаем идентификатор счета (billId) для текущего клиента и месяца
+    SELECT Id INTO billId
+    FROM BILL
+    WHERE CustomerId = NEW.CustomerId
+    AND Month = MONTH(NEW.StartCall)
+    AND Year = YEAR(NEW.StartCall);
+
+    -- Если счет уже существует, обновляем его сумму (amount)
+    IF billId IS NOT NULL THEN
+        SELECT Amount INTO billAmount
+        FROM PHONECALL
+        WHERE CustomerId = NEW.CustomerId
+        AND Month = MONTH(NEW.StartCall)
+        AND Year = YEAR(NEW.StartCall);
+
+        UPDATE BILL
+        SET Amount = Amount + billAmount
+        WHERE Id = billId;
+    -- Если счет не существует, создаем новую запись в таблице BILL
+    ELSE
+        INSERT INTO BILL (Month, Year, Amount, CustomerId)
+        VALUES (MONTH(NEW.StartCall), YEAR(NEW.StartCall), NEW.Seconds * (SELECT PricePerSecond FROM PRICINGPLAN WHERE Id = (SELECT PricingPlan_id FROM CUSTOMER WHERE Id = NEW.CustomerId)), NEW.CustomerId);
+    END IF;
+END;
+
+Здание 3:
+Реализовать консольное приложение на Java в котром есть возможность
+  1. Вводить информацию о клиентах
+  2. Регистрировать звонки
+  3. Печатать счет за текущий месяц для абонентов
